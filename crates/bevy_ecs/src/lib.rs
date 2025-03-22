@@ -2389,11 +2389,15 @@ mod tests {
     fn registration_meta_fail() {
         #[derive(Component, Default)]
         // #[require(B)] // This being missing should cause a panic.
-        #[required_meta(B(mode: RequirementMode::OrRemove))]
+        #[require(C)]
+        #[required_meta(C(mode: RequirementMode::OnInsert), B(mode: RequirementMode::OrRemove))]
         struct A;
 
         #[derive(Component, Default)]
         struct B;
+
+        #[derive(Component, Default)]
+        struct C;
 
         let mut world = World::new();
         world.register_component::<A>();
