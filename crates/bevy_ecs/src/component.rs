@@ -2286,7 +2286,7 @@ impl Components {
             .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
     }
 
-    /// Sets the [`RequirementCorencyMode`] of `component`'s requirement of `required`.
+    /// Sets the [`RequirementCoherencyMode`] of `component`'s requirement of `required`.
     /// Returns `false` if the requirement has not been registered yet.
     ///
     /// # Safety
@@ -2701,7 +2701,7 @@ impl<T: Component> FromWorld for InitComponentId<T> {
 
 /// This defines how a [`RequiredComponent`] behaves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
-pub enum RequirementCorencyMode {
+pub enum RequirementCoherencyMode {
     /// The requirement will not be enforced. The required component will be added, but users can remove it at any time.
     #[default]
     None,
@@ -2722,8 +2722,8 @@ pub enum RequirementCorencyMode {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RequiredByMeta {
     /// The fundamental more for the requirement.
-    /// See [`RequirementCorencyMode`] for details.
-    pub mode: RequirementCorencyMode,
+    /// See [`RequirementCoherencyMode`] for details.
+    pub mode: RequirementCoherencyMode,
 }
 
 /// This is the other half of [`RequiredComponents`].
@@ -2734,7 +2734,7 @@ impl RequiredBy {
     /// Includes the `id`, adding it if it did not exist.
     pub(crate) fn include(&mut self, id: ComponentId) -> &mut RequiredByMeta {
         self.0.entry(id).or_insert(RequiredByMeta {
-            mode: RequirementCorencyMode::default(),
+            mode: RequirementCoherencyMode::default(),
         })
     }
 

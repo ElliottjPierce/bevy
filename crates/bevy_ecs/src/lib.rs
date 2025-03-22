@@ -72,7 +72,7 @@ pub mod prelude {
         bundle::Bundle,
         change_detection::{DetectChanges, DetectChangesMut, Mut, Ref},
         children,
-        component::Component,
+        component::{Component, RequirementCoherencyMode},
         entity::{Entity, EntityBorrow, EntityMapper},
         error::{BevyError, Result},
         event::{Event, EventMutator, EventReader, EventWriter, Events},
@@ -134,7 +134,7 @@ mod tests {
         change_detection::Ref,
         component::{
             Component, ComponentId, RequiredByMeta, RequiredComponents, RequiredComponentsError,
-            RequirementCorencyMode,
+            RequirementCoherencyMode,
         },
         entity::{Entity, EntityMapper},
         entity_disabling::DefaultQueryFilters,
@@ -2360,7 +2360,7 @@ mod tests {
     fn registration_meta() {
         #[derive(Component, Default)]
         #[require(B)]
-        #[required_meta(B(mode: RequirementMode::OrRemove))]
+        #[requirement_cfg(B(mode: RequirementCoherencyMode::Remove))]
         struct A;
 
         #[derive(Component, Default)]
@@ -2377,7 +2377,7 @@ mod tests {
         assert_eq!(
             required_by,
             &RequiredByMeta {
-                mode: RequirementCorencyMode::Remove
+                mode: RequirementCoherencyMode::Remove
             }
         );
     }
@@ -2390,7 +2390,7 @@ mod tests {
         #[derive(Component, Default)]
         // #[require(B)] // This being missing should cause a panic.
         #[require(C)]
-        #[required_meta(C(mode: RequirementMode::OnInsert), B(mode: RequirementMode::OrRemove))]
+        #[requirement_cfg(C(mode: RequirementCoherencyMode::Remove), B(mode: RequirementCoherencyMode::Remove))]
         struct A;
 
         #[derive(Component, Default)]

@@ -520,7 +520,7 @@ pub fn derive_resource(input: TokenStream) -> TokenStream {
     attributes(
         component,
         require,
-        required_meta,
+        requirement_cfg,
         relationship,
         relationship_target,
         entities

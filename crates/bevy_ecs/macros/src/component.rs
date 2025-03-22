@@ -245,7 +245,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .required_meta
         .iter()
         .flat_map(|req| req.iter())
-        .map(|RequiredMeta { path, constructor }| {
+        .map(|RequirementCfg { path, constructor }| {
             let constructor = constructor.iter();
             let panic_string = format!("The `Component` derive macro for `{0}` sets `RequiredByMeta` for requiring `{1}`, but the component does not actually require `{1}`. Either add the requirement, or don't set `RequiredByMeta` for it.", &ast.ident, &path.segments.last().unwrap().ident);
             quote! {
@@ -420,7 +420,7 @@ pub(crate) fn map_entities(
 pub const COMPONENT: &str = "component";
 pub const STORAGE: &str = "storage";
 pub const REQUIRE: &str = "require";
-pub const REQUIRED_META: &str = "required_meta";
+pub const REQUIREMENT_CFG: &str = "requirement_cfg";
 pub const RELATIONSHIP: &str = "relationship";
 pub const RELATIONSHIP_TARGET: &str = "relationship_target";
 
@@ -485,7 +485,7 @@ impl Parse for HookAttributeKind {
 struct Attrs {
     storage: StorageTy,
     requires: Option<Punctuated<Require, Comma>>,
-    required_meta: Option<Punctuated<RequiredMeta, Comma>>,
+    required_meta: Option<Punctuated<RequirementCfg, Comma>>,
     on_add: Option<HookAttributeKind>,
     on_insert: Option<HookAttributeKind>,
     on_replace: Option<HookAttributeKind>,
@@ -512,7 +512,7 @@ enum RequireFunc {
     Closure(ExprClosure),
 }
 
-struct RequiredMeta {
+struct RequirementCfg {
     path: Path,
     constructor: Punctuated<FieldValue, Token![,]>,
 }
@@ -600,9 +600,9 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
             } else {
                 attrs.requires = Some(punctuated);
             }
-        } else if attr.path().is_ident(REQUIRED_META) {
+        } else if attr.path().is_ident(REQUIREMENT_CFG) {
             let punctuated =
-                attr.parse_args_with(Punctuated::<RequiredMeta, Comma>::parse_terminated)?;
+                attr.parse_args_with(Punctuated::<RequirementCfg, Comma>::parse_terminated)?;
             for required in punctuated.iter() {
                 if !required_meta_paths.insert(required.path.to_token_stream().to_string()) {
                     return Err(syn::Error::new(
@@ -628,7 +628,7 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
     Ok(attrs)
 }
 
-impl Parse for RequiredMeta {
+impl Parse for RequirementCfg {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let path = input.parse::<Path>()?;
         let content;
