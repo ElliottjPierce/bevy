@@ -134,7 +134,7 @@ mod tests {
         change_detection::Ref,
         component::{
             Component, ComponentId, RequiredByMeta, RequiredComponents, RequiredComponentsError,
-            RequirementMode,
+            RequirementCorencyMode,
         },
         entity::{Entity, EntityMapper},
         entity_disabling::DefaultQueryFilters,
@@ -2377,7 +2377,7 @@ mod tests {
         assert_eq!(
             required_by,
             &RequiredByMeta {
-                mode: RequirementMode::OrRemove
+                mode: RequirementCorencyMode::Remove
             }
         );
     }

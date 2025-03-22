@@ -546,7 +546,7 @@ mod private {
 /// `&mut ...`, created while inserted onto an entity.
 /// In all other ways, they are identical to mutable components.
 /// This restriction allows hooks to observe all changes made to an immutable
-/// component, effectively turning the `OnInsert` and `OnReplace` hooks into a
+/// component, effectively turning the `None` and `OnReplace` hooks into a
 /// `OnMutate` hook.
 /// This is not practical for mutable components, as the runtime cost of invoking
 /// a hook for every exclusive reference created would be far too high.
@@ -2286,7 +2286,7 @@ impl Components {
             .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
     }
 
-    /// Sets the [`RequirementMode`] of `component`'s requirement of `required`.
+    /// Sets the [`RequirementCorencyMode`] of `component`'s requirement of `required`.
     /// Returns `false` if the requirement has not been registered yet.
     ///
     /// # Safety
@@ -2701,22 +2701,20 @@ impl<T: Component> FromWorld for InitComponentId<T> {
 
 /// This defines how a [`RequiredComponent`] behaves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
-pub enum RequirementMode {
-    /// The required component will be inserted/spawned when this component is inserted or spawned.
+pub enum RequirementCorencyMode {
+    /// The requirement will not be enforced. The required component will be added, but users can remove it at any time.
     #[default]
-    OnInsert,
-    /// Performs like [`OnInsert`](Self::OnInsert),
-    /// but if the required component is removed, this one is removed too.
-    OrRemove,
+    None,
+    /// The requirement is enforced by removing the components together. When the required component is removed, so is its requree.
+    Remove,
     // Coming soon?:
-    // /// Performs like [`OnInsert`](Self::OnInsert),
-    // /// but if the required component is removed, a new one is inserted.
-    // OrInsert,
-    // /// Performs like [`OnInsert`](Self::OnInsert),
-    // /// but if the required component can not be removed while this component is still present.
+    // /// The requirement is enforced by re-inserting the required component that was removed.
+    // Insert,
+    // /// The requirement is enforced by panicking when it is violated.
+    // Panic,
+    // /// The requirement is enforced by preventing the required component from being removed without explicitly also removing its requiree.
     // Keep,
-    // /// Performs like [`OnInsert`](Self::OnInsert),
-    // /// but when the required component is removed, this one is removed with it.
+    // /// Similar to [`Keep`](Self::Keep), but when the requruiree is removed, the required component is too.
     // KeepAndLink,
 }
 
@@ -2724,8 +2722,8 @@ pub enum RequirementMode {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RequiredByMeta {
     /// The fundamental more for the requirement.
-    /// See [`RequirementMode`] for details.
-    pub mode: RequirementMode,
+    /// See [`RequirementCorencyMode`] for details.
+    pub mode: RequirementCorencyMode,
 }
 
 /// This is the other half of [`RequiredComponents`].
@@ -2736,7 +2734,7 @@ impl RequiredBy {
     /// Includes the `id`, adding it if it did not exist.
     pub(crate) fn include(&mut self, id: ComponentId) -> &mut RequiredByMeta {
         self.0.entry(id).or_insert(RequiredByMeta {
-            mode: RequirementMode::default(),
+            mode: RequirementCorencyMode::default(),
         })
     }
 
