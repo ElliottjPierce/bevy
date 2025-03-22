@@ -2723,7 +2723,7 @@ pub enum RequirementCoherencyMode {
 pub struct RequiredByMeta {
     /// The fundamental more for the requirement.
     /// See [`RequirementCoherencyMode`] for details.
-    pub mode: RequirementCoherencyMode,
+    pub coherency: RequirementCoherencyMode,
 }
 
 /// This is the other half of [`RequiredComponents`].
@@ -2734,7 +2734,7 @@ impl RequiredBy {
     /// Includes the `id`, adding it if it did not exist.
     pub(crate) fn include(&mut self, id: ComponentId) -> &mut RequiredByMeta {
         self.0.entry(id).or_insert(RequiredByMeta {
-            mode: RequirementCoherencyMode::default(),
+            coherency: RequirementCoherencyMode::default(),
         })
     }
 

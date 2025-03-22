@@ -2360,7 +2360,7 @@ mod tests {
     fn registration_meta() {
         #[derive(Component, Default)]
         #[require(B)]
-        #[requirement_cfg(B(mode: RequirementCoherencyMode::Remove))]
+        #[requirement_cfg(B(coherency=Remove))]
         struct A;
 
         #[derive(Component, Default)]
@@ -2377,7 +2377,7 @@ mod tests {
         assert_eq!(
             required_by,
             &RequiredByMeta {
-                mode: RequirementCoherencyMode::Remove
+                coherency: RequirementCoherencyMode::Remove
             }
         );
     }
@@ -2390,7 +2390,7 @@ mod tests {
         #[derive(Component, Default)]
         // #[require(B)] // This being missing should cause a panic.
         #[require(C)]
-        #[requirement_cfg(C(mode: RequirementCoherencyMode::Remove), B(mode: RequirementCoherencyMode::Remove))]
+        #[requirement_cfg(C(coherency=Remove), B(coherency=Remove))]
         struct A;
 
         #[derive(Component, Default)]

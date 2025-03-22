@@ -9,8 +9,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Comma, Paren},
-    Data, DataEnum, DataStruct, DeriveInput, Expr, ExprCall, ExprClosure, ExprPath, Field,
-    FieldValue, Fields, Ident, LitStr, Member, Path, Result, Token, Type, Visibility,
+    Data, DataEnum, DataStruct, DeriveInput, Expr, ExprCall, ExprClosure, ExprPath, Field, Fields,
+    Ident, LitStr, Member, Path, Result, Token, Type, Visibility,
 };
 
 pub const EVENT: &str = "event";
@@ -242,17 +242,25 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         }
     }
     let register_required_meta = attrs
-        .required_meta
+        .requirement_cfg
         .iter()
         .flat_map(|req| req.iter())
         .map(|RequirementCfg { path, constructor }| {
-            let constructor = constructor.iter();
+            let constructor = constructor.iter().map(|item| {
+                match item {
+                    RequirementCfgItem::Coherency(ident) => {
+                        quote! {
+                            coherency: #bevy_ecs_path::component::RequirementCoherencyMode::#ident,
+                        }
+                    }
+                }
+            });
             let panic_string = format!("The `Component` derive macro for `{0}` sets `RequiredByMeta` for requiring `{1}`, but the component does not actually require `{1}`. Either add the requirement, or don't set `RequiredByMeta` for it.", &ast.ident, &path.segments.last().unwrap().ident);
             quote! {
                 #[allow(clippy::needless_update, reason = "We need this since the macro can not tell if it's needed or not.")]
                 let success = components.register_requirement_meta_manual::<Self, #path>(
                     #bevy_ecs_path::component::RequiredByMeta {
-                        #(#constructor,)*
+                        #(#constructor)*
                         ..Default::default()
                     }
                 );
@@ -485,7 +493,7 @@ impl Parse for HookAttributeKind {
 struct Attrs {
     storage: StorageTy,
     requires: Option<Punctuated<Require, Comma>>,
-    required_meta: Option<Punctuated<RequirementCfg, Comma>>,
+    requirement_cfg: Option<Punctuated<RequirementCfg, Comma>>,
     on_add: Option<HookAttributeKind>,
     on_insert: Option<HookAttributeKind>,
     on_replace: Option<HookAttributeKind>,
@@ -514,7 +522,11 @@ enum RequireFunc {
 
 struct RequirementCfg {
     path: Path,
-    constructor: Punctuated<FieldValue, Token![,]>,
+    constructor: Punctuated<RequirementCfgItem, Token![,]>,
+}
+
+enum RequirementCfgItem {
+    Coherency(Ident),
 }
 
 struct Relationship {
@@ -542,7 +554,7 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
         relationship: None,
         relationship_target: None,
         immutable: false,
-        required_meta: None,
+        requirement_cfg: None,
     };
 
     let mut require_paths = HashSet::new();
@@ -611,10 +623,10 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
                     ));
                 }
             }
-            if let Some(current) = &mut attrs.required_meta {
+            if let Some(current) = &mut attrs.requirement_cfg {
                 current.extend(punctuated);
             } else {
-                attrs.required_meta = Some(punctuated);
+                attrs.requirement_cfg = Some(punctuated);
             }
         } else if attr.path().is_ident(RELATIONSHIP) {
             let relationship = attr.parse_args::<Relationship>()?;
@@ -635,6 +647,23 @@ impl Parse for RequirementCfg {
         parenthesized!(content in input);
         let constructor = Punctuated::parse_separated_nonempty(&content)?;
         Ok(Self { path, constructor })
+    }
+}
+
+impl Parse for RequirementCfgItem {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+        mod keywords {
+            use syn::custom_keyword;
+
+            custom_keyword!(coherency);
+        }
+
+        Ok(if input.parse::<keywords::coherency>().is_ok() {
+            input.parse::<Token![=]>()?;
+            Self::Coherency(input.parse()?)
+        } else {
+            return Err(input.error("This requirement configuration item is not recognized."));
+        })
     }
 }
 
