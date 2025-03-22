@@ -1775,6 +1775,7 @@ impl<'w> ComponentsRegistrator<'w> {
     //       We can't directly move this there either, because this uses `Components::register_requirement_meta_manual_unchecked`,
     //       which is private, and could be equally risky to expose to users.
     /// Registers that where `T` requires `R`, it does so with this [`RequiredByMeta`].
+    /// Returns `false` if the requirement has not been registered yet.
     ///
     /// This does not register the requirement!
     /// See [`register_required_components_manual`](Self::register_required_components_manual) for that.
@@ -1783,14 +1784,12 @@ impl<'w> ComponentsRegistrator<'w> {
     pub fn register_requirement_meta_manual<T: Component, R: Component>(
         &mut self,
         meta: RequiredByMeta,
-    ) {
+    ) -> bool {
         let component = self.register_component::<T>();
         let required = self.register_component::<R>();
 
         // SAFETY: We just created the components.
-        unsafe {
-            self.register_requirement_meta_manual_unchecked(component, required, meta);
-        }
+        unsafe { self.register_requirement_meta_manual_unchecked(component, required, meta) }
     }
 
     // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
@@ -2288,6 +2287,7 @@ impl Components {
     }
 
     /// Sets the [`RequirementMode`] of `component`'s requirement of `required`.
+    /// Returns `false` if the requirement has not been registered yet.
     ///
     /// # Safety
     ///
@@ -2298,10 +2298,10 @@ impl Components {
         component: ComponentId,
         required: ComponentId,
         data: RequiredByMeta,
-    ) {
+    ) -> bool {
         // SAFETY: Ensured by caller.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
-        required_by.set_if_required(component, data);
+        required_by.set_if_required(component, data)
     }
 
     /// Returns true if the [`ComponentId`] is fully registered and valid.
@@ -2756,9 +2756,13 @@ impl RequiredBy {
     }
 
     /// Sets the metadata of this requirement if it is represented.
-    pub(crate) fn set_if_required(&mut self, id: ComponentId, meta: RequiredByMeta) {
+    /// Returns true if and only if the requirement was represented.
+    pub(crate) fn set_if_required(&mut self, id: ComponentId, meta: RequiredByMeta) -> bool {
         if let Some(current) = self.0.get_mut(&id) {
             *current = meta;
+            true
+        } else {
+            false
         }
     }
 }

@@ -247,14 +247,18 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .flat_map(|req| req.iter())
         .map(|RequiredMeta { path, constructor }| {
             let constructor = constructor.iter();
+            let panic_string = format!("The `Component` derive macro for `{0}` sets `RequiredByMeta` for requiring `{1}`, but the component does not actually require `{1}`. Either add the requirement, or don't set `RequiredByMeta` for it.", &ast.ident, &path.segments.last().unwrap().ident);
             quote! {
                 #[allow(clippy::needless_update, reason = "We need this since the macro can not tell if it's needed or not.")]
-                components.register_requirement_meta_manual::<Self, #path>(
+                let success = components.register_requirement_meta_manual::<Self, #path>(
                     #bevy_ecs_path::component::RequiredByMeta {
                         #(#constructor,)*
                         ..Default::default()
                     }
                 );
+                if !success {
+                    core::panic!(#panic_string);
+                }
             }
         })
         .collect::<Vec<_>>();

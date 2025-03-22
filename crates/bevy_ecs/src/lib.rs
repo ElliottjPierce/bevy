@@ -2383,6 +2383,23 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(
+        expected = "The `Component` derive macro for `A` sets `RequiredByMeta` for requiring `B`, but the component does not actually require `B`. Either add the requirement, or don't set `RequiredByMeta` for it."
+    )]
+    fn registration_meta_fail() {
+        #[derive(Component, Default)]
+        // #[require(B)] // This being missing should cause a panic.
+        #[required_meta(B(mode: RequirementMode::OrRemove))]
+        struct A;
+
+        #[derive(Component, Default)]
+        struct B;
+
+        let mut world = World::new();
+        world.register_component::<A>();
+    }
+
+    #[test]
     fn runtime_required_components_override_1() {
         #[derive(Component)]
         struct X;
