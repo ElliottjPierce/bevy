@@ -132,7 +132,10 @@ mod tests {
     use crate::{
         bundle::Bundle,
         change_detection::Ref,
-        component::{Component, ComponentId, RequiredComponents, RequiredComponentsError},
+        component::{
+            Component, ComponentId, RequiredByMeta, RequiredComponents, RequiredComponentsError,
+            RequirementMode,
+        },
         entity::{Entity, EntityMapper},
         entity_disabling::DefaultQueryFilters,
         prelude::Or,
@@ -2350,6 +2353,32 @@ mod tests {
             8,
             world.entity(id).get::<Z>().unwrap().0,
             "Z should have the manually provided value"
+        );
+    }
+
+    #[test]
+    fn registration_meta() {
+        #[derive(Component, Default)]
+        #[require(B)]
+        #[required_meta(B(mode: RequirementMode::OrRemove))]
+        struct A;
+
+        #[derive(Component, Default)]
+        struct B;
+
+        let mut world = World::new();
+        let a_id = world.register_component::<A>();
+
+        let components = world.components();
+        let info = components
+            .get_info(components.valid_component_id::<B>().unwrap())
+            .unwrap();
+        let required_by = info.required_by().get(a_id).unwrap();
+        assert_eq!(
+            required_by,
+            &RequiredByMeta {
+                mode: RequirementMode::OrRemove
+            }
         );
     }
 

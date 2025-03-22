@@ -959,6 +959,12 @@ impl ComponentInfo {
     pub fn required_components(&self) -> &RequiredComponents {
         &self.required_components
     }
+
+    /// Retrieves the [`RequiredBy`] collection, which contains data regarding components that require this one.
+    /// This includes _recursive_ required components.
+    pub fn required_by(&self) -> &RequiredBy {
+        &self.required_by
+    }
 }
 
 /// A value which uniquely identifies the type of a [`Component`] or [`Resource`] within a
@@ -2715,16 +2721,11 @@ pub enum RequirementMode {
 }
 
 /// This is the other half of a [`RequiredComponent`].
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RequiredByMeta {
-    mode: RequirementMode,
-}
-
-impl RequiredByMeta {
-    /// Gets the [`RequirementMode`] of this this requirement.
-    pub fn mode(&self) -> RequirementMode {
-        self.mode
-    }
+    /// The fundamental more for the requirement.
+    /// See [`RequirementMode`] for details.
+    pub mode: RequirementMode,
 }
 
 /// This is the other half of [`RequiredComponents`].
