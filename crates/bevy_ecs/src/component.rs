@@ -16,10 +16,7 @@ use alloc::boxed::Box;
 use alloc::{borrow::Cow, format, vec::Vec};
 pub use bevy_ecs_macros::Component;
 use bevy_platform_support::sync::Arc;
-use bevy_platform_support::{
-    collections::{HashMap, HashSet},
-    sync::PoisonError,
-};
+use bevy_platform_support::{collections::HashMap, sync::PoisonError};
 use bevy_ptr::{OwningPtr, UnsafeCellDeref};
 #[cfg(feature = "bevy_reflect")]
 use bevy_reflect::Reflect;
@@ -855,7 +852,7 @@ pub struct ComponentInfo {
     descriptor: ComponentDescriptor,
     hooks: ComponentHooks,
     required_components: RequiredComponents,
-    required_by: HashSet<ComponentId>,
+    required_by: RequiredBy,
 }
 
 impl ComponentInfo {
@@ -1769,6 +1766,28 @@ impl<'w> ComponentsRegistrator<'w> {
     }
 
     // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
+    //       We can't directly move this there either, because this uses `Components::register_requirement_meta_manual_unchecked`,
+    //       which is private, and could be equally risky to expose to users.
+    /// Registers that where `T` requires `R`, it does so with this [`RequiredByMeta`].
+    ///
+    /// This does not register the requirement!
+    /// See [`register_required_components_manual`](Self::register_required_components_manual) for that.
+    /// This will only do something if `T` already requires `R` in some way.
+    #[doc(hidden)]
+    pub fn register_requirement_meta_manual<T: Component, R: Component>(
+        &mut self,
+        meta: RequiredByMeta,
+    ) {
+        let component = self.register_component::<T>();
+        let required = self.register_component::<R>();
+
+        // SAFETY: We just created the components.
+        unsafe {
+            self.register_requirement_meta_manual_unchecked(component, required, meta);
+        }
+    }
+
+    // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
     //       We can't directly move this there either, because this uses `Components::get_required_by_mut`,
     //       which is private, and could be equally risky to expose to users.
     /// Registers the given component `R` and [required components] inherited from it as required by `T`,
@@ -2087,7 +2106,7 @@ impl Components {
         // Add the requiree to the list of components that require the required component.
         // SAFETY: The component is in the list of required components, so it must exist already.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
-        required_by.insert(requiree);
+        required_by.include(requiree);
 
         let mut required_components_tmp = RequiredComponents::default();
         // SAFETY: The caller ensures that the `requiree` and `required` components are valid.
@@ -2107,15 +2126,19 @@ impl Components {
         required_components.0.extend(required_components_tmp.0);
 
         // Propagate the new required components up the chain to all components that require the requiree.
-        if let Some(required_by) = self
-            .get_required_by(requiree)
-            .map(|set| set.iter().copied().collect::<SmallVec<[ComponentId; 8]>>())
-        {
-            // `required` is now required by anything that `requiree` was required by.
-            self.get_required_by_mut(required)
-                .unwrap()
-                .extend(required_by.iter().copied());
-            for &required_by_id in required_by.iter() {
+        if let Some(required_by) = self.get_required_by(requiree).map(|required_by| {
+            required_by
+                .iter_ids()
+                .collect::<SmallVec<[ComponentId; 8]>>()
+        }) {
+            {
+                // `required` is now required by anything that `requiree` was required by.
+                let base_required_by = self.get_required_by_mut(required).unwrap();
+                for &required_by_id in required_by.iter() {
+                    base_required_by.include(required_by_id);
+                }
+            }
+            for required_by_id in required_by {
                 // SAFETY: The component is in the list of required components, so it must exist already.
                 let required_components = unsafe {
                     self.get_required_components_mut(required_by_id)
@@ -2199,7 +2222,7 @@ impl Components {
                 self.get_required_by_mut(*component_id)
                     .debug_checked_unwrap()
             };
-            required_by.insert(requiree);
+            required_by.include(requiree);
         }
 
         inherited_requirements
@@ -2239,26 +2262,40 @@ impl Components {
         // SAFETY: The caller ensures that the component ID is valid.
         //         Assuming it is valid, the component is in the list of required components, so it must exist already.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
-        required_by.insert(requiree);
+        required_by.include(requiree);
 
         self.register_inherited_required_components(requiree, required, required_components);
     }
 
     #[inline]
-    pub(crate) fn get_required_by(&self, id: ComponentId) -> Option<&HashSet<ComponentId>> {
+    pub(crate) fn get_required_by(&self, id: ComponentId) -> Option<&RequiredBy> {
         self.components
             .get(id.0)
             .and_then(|info| info.as_ref().map(|info| &info.required_by))
     }
 
     #[inline]
-    pub(crate) fn get_required_by_mut(
-        &mut self,
-        id: ComponentId,
-    ) -> Option<&mut HashSet<ComponentId>> {
+    pub(crate) fn get_required_by_mut(&mut self, id: ComponentId) -> Option<&mut RequiredBy> {
         self.components
             .get_mut(id.0)
             .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
+    }
+
+    /// Sets the [`RequirementMode`] of `component`'s requirement of `required`.
+    ///
+    /// # Safety
+    ///
+    /// The given component IDs `component` and `required` must be valid.
+    #[inline]
+    pub(crate) unsafe fn register_requirement_meta_manual_unchecked(
+        &mut self,
+        component: ComponentId,
+        required: ComponentId,
+        data: RequiredByMeta,
+    ) {
+        // SAFETY: Ensured by caller.
+        let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
+        required_by.set_if_required(component, data);
     }
 
     /// Returns true if the [`ComponentId`] is fully registered and valid.
@@ -2652,6 +2689,75 @@ impl<T: Component> FromWorld for InitComponentId<T> {
         Self {
             component_id: world.register_component::<T>(),
             marker: PhantomData,
+        }
+    }
+}
+
+/// This defines how a [`RequiredComponent`] behaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+pub enum RequirementMode {
+    /// The required component will be inserted/spawned when this component is inserted or spawned.
+    #[default]
+    OnInsert,
+    /// Performs like [`OnInsert`](Self::OnInsert),
+    /// but if the required component is removed, this one is removed too.
+    OrRemove,
+    // Coming soon?:
+    // /// Performs like [`OnInsert`](Self::OnInsert),
+    // /// but if the required component is removed, a new one is inserted.
+    // OrInsert,
+    // /// Performs like [`OnInsert`](Self::OnInsert),
+    // /// but if the required component can not be removed while this component is still present.
+    // Keep,
+    // /// Performs like [`OnInsert`](Self::OnInsert),
+    // /// but when the required component is removed, this one is removed with it.
+    // KeepAndLink,
+}
+
+/// This is the other half of a [`RequiredComponent`].
+#[derive(Debug, Default, Clone)]
+pub struct RequiredByMeta {
+    mode: RequirementMode,
+}
+
+impl RequiredByMeta {
+    /// Gets the [`RequirementMode`] of this this requirement.
+    pub fn mode(&self) -> RequirementMode {
+        self.mode
+    }
+}
+
+/// This is the other half of [`RequiredComponents`].
+#[derive(Debug, Default, Clone)]
+pub struct RequiredBy(pub(crate) HashMap<ComponentId, RequiredByMeta>);
+
+impl RequiredBy {
+    /// Includes the `id`, adding it if it did not exist.
+    pub(crate) fn include(&mut self, id: ComponentId) -> &mut RequiredByMeta {
+        self.0.entry(id).or_insert(RequiredByMeta {
+            mode: RequirementMode::default(),
+        })
+    }
+
+    /// Iterates the id that require this component.
+    pub fn iter_ids(&self) -> impl Iterator<Item = ComponentId> {
+        self.0.keys().copied()
+    }
+
+    /// Iterates all the components that requrie this one.
+    pub fn iter(&self) -> impl Iterator<Item = (&RequiredByMeta, ComponentId)> {
+        self.0.iter().map(|(key, required_by)| (required_by, *key))
+    }
+
+    /// Gets the [`RequiredByMeta`] this component if `id` requires this component.
+    pub fn get(&self, id: ComponentId) -> Option<&RequiredByMeta> {
+        self.0.get(&id)
+    }
+
+    /// Sets the metadata of this requirement if it is represented.
+    pub(crate) fn set_if_required(&mut self, id: ComponentId, meta: RequiredByMeta) {
+        if let Some(current) = self.0.get_mut(&id) {
+            *current = meta;
         }
     }
 }
