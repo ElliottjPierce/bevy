@@ -9,8 +9,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Comma, Paren},
-    Data, DataEnum, DataStruct, DeriveInput, Expr, ExprCall, ExprClosure, ExprPath, Field, Fields,
-    Ident, LitStr, Member, Path, Result, Token, Type, Visibility,
+    Data, DataEnum, DataStruct, DeriveInput, Expr, ExprCall, ExprClosure, ExprPath, Field,
+    FieldValue, Fields, Ident, LitStr, Member, Path, Result, Token, Type, Visibility,
 };
 
 pub const EVENT: &str = "event";
@@ -192,8 +192,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .push(parse_quote! { Self: Send + Sync + 'static });
 
     let requires = &attrs.requires;
-    let mut register_required = Vec::with_capacity(attrs.requires.iter().len());
-    let mut register_recursive_requires = Vec::with_capacity(attrs.requires.iter().len());
+    let requires_len = requires.as_ref().map(Punctuated::len).unwrap_or_default();
+    let mut register_required = Vec::with_capacity(requires_len);
+    let mut register_recursive_requires = Vec::with_capacity(requires_len);
     if let Some(requires) = requires {
         for require in requires {
             let ident = &require.path;
@@ -240,6 +241,23 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             }
         }
     }
+    let register_required_meta = attrs
+        .required_meta
+        .iter()
+        .flat_map(|req| req.iter())
+        .map(|RequiredMeta { path, constructor }| {
+            let constructor = constructor.iter();
+            quote! {
+                components.register_requirement_meta_manual::<Self, #path>(
+                    #bevy_ecs_path::component::RequiredByMeta {
+                        #(#constructor),*
+                        ..default()
+                    }
+                );
+            }
+        })
+        .collect::<Vec<_>>();
+
     let struct_name = &ast.ident;
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
@@ -287,6 +305,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 recursion_check_stack.push(self_id);
                 #(#register_required)*
                 #(#register_recursive_requires)*
+                #(#register_required_meta)*
                 recursion_check_stack.pop();
             }
 
@@ -396,6 +415,7 @@ pub(crate) fn map_entities(
 pub const COMPONENT: &str = "component";
 pub const STORAGE: &str = "storage";
 pub const REQUIRE: &str = "require";
+pub const REQUIRED_META: &str = "required_meta";
 pub const RELATIONSHIP: &str = "relationship";
 pub const RELATIONSHIP_TARGET: &str = "relationship_target";
 
@@ -460,6 +480,7 @@ impl Parse for HookAttributeKind {
 struct Attrs {
     storage: StorageTy,
     requires: Option<Punctuated<Require, Comma>>,
+    required_meta: Option<Punctuated<RequiredMeta, Comma>>,
     on_add: Option<HookAttributeKind>,
     on_insert: Option<HookAttributeKind>,
     on_replace: Option<HookAttributeKind>,
@@ -484,6 +505,11 @@ struct Require {
 enum RequireFunc {
     Path(Path),
     Closure(ExprClosure),
+}
+
+struct RequiredMeta {
+    path: Path,
+    constructor: Punctuated<FieldValue, Token![,]>,
 }
 
 struct Relationship {
@@ -511,9 +537,12 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
         relationship: None,
         relationship_target: None,
         immutable: false,
+        required_meta: None,
     };
 
     let mut require_paths = HashSet::new();
+    let mut required_meta_paths = HashSet::new();
+
     for attr in ast.attrs.iter() {
         if attr.path().is_ident(COMPONENT) {
             attr.parse_nested_meta(|nested| {
@@ -566,6 +595,22 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
             } else {
                 attrs.requires = Some(punctuated);
             }
+        } else if attr.path().is_ident(REQUIRED_META) {
+            let punctuated =
+                attr.parse_args_with(Punctuated::<RequiredMeta, Comma>::parse_terminated)?;
+            for required in punctuated.iter() {
+                if !required_meta_paths.insert(required.path.to_token_stream().to_string()) {
+                    return Err(syn::Error::new(
+                        required.path.span(),
+                        "Duplicate required component metas are not allowed.",
+                    ));
+                }
+            }
+            if let Some(current) = &mut attrs.required_meta {
+                current.extend(punctuated);
+            } else {
+                attrs.required_meta = Some(punctuated);
+            }
         } else if attr.path().is_ident(RELATIONSHIP) {
             let relationship = attr.parse_args::<Relationship>()?;
             attrs.relationship = Some(relationship);
@@ -576,6 +621,16 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
     }
 
     Ok(attrs)
+}
+
+impl Parse for RequiredMeta {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+        let path = input.parse::<Path>()?;
+        let content;
+        parenthesized!(content in input);
+        let constructor = Punctuated::parse_separated_nonempty(&content)?;
+        Ok(Self { path, constructor })
+    }
 }
 
 impl Parse for Require {
