@@ -853,6 +853,7 @@ pub struct ComponentInfo {
     hooks: ComponentHooks,
     required_components: RequiredComponents,
     required_by: RequiredBy,
+    removal_behavior: RemovalBehavior,
 }
 
 impl ComponentInfo {
@@ -926,6 +927,7 @@ impl ComponentInfo {
             hooks: Default::default(),
             required_components: Default::default(),
             required_by: Default::default(),
+            removal_behavior: RemovalBehavior::default(),
         }
     }
 
@@ -964,6 +966,11 @@ impl ComponentInfo {
     /// This includes _recursive_ required components.
     pub fn required_by(&self) -> &RequiredBy {
         &self.required_by
+    }
+
+    /// Retrieves the [`RemovalBehavior`], which determines how this component should be removed.
+    pub fn removal_behavior(&self) -> &RemovalBehavior {
+        &self.removal_behavior
     }
 }
 
@@ -2285,6 +2292,23 @@ impl Components {
             .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
     }
 
+    #[inline]
+    pub(crate) fn get_removal_behavior(&self, id: ComponentId) -> Option<&RemovalBehavior> {
+        self.components
+            .get(id.0)
+            .and_then(|info| info.as_ref().map(|info| &info.removal_behavior))
+    }
+
+    #[inline]
+    pub(crate) fn get_removal_behavior_mut(
+        &mut self,
+        id: ComponentId,
+    ) -> Option<&mut RemovalBehavior> {
+        self.components
+            .get_mut(id.0)
+            .and_then(|info| info.as_mut().map(|info| &mut info.removal_behavior))
+    }
+
     /// Sets the [`RequirementConfig`] of `component`'s requirement of `required`.
     ///
     /// # Safety
@@ -2337,17 +2361,14 @@ impl Components {
 
         // uphold the coherency
         // SAFETY: Ensured by caller.
-        let meta = unsafe {
-            self.get_required_by_mut(required)
-                .debug_checked_unwrap()
-                .0
-                .get_mut(&component)
+        let removal_behavior = unsafe {
+            self.get_removal_behavior_mut(required)
                 .debug_checked_unwrap()
         };
         match coherency {
             RequirementCoherencyMode::None => {}
             RequirementCoherencyMode::Remove => {
-                meta.removal_behavior.causes_removal.push(component);
+                removal_behavior.causes_removal.push(component);
             }
         }
 
@@ -2755,10 +2776,11 @@ impl<T: Component> FromWorld for InitComponentId<T> {
     }
 }
 
+/// This defines what happens when a component is removed.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct RemovalBehavior {
+pub struct RemovalBehavior {
     /// Removing this component will also remove these components if they exist.
-    causes_removal: Vec<ComponentId>,
+    pub(crate) causes_removal: Vec<ComponentId>,
     // Coming soon?
     // /// Removing this component will also re-insert these components if they exist.
     // reinsert_if_removes: Vec<(ComponentId, fn(crate::change_detection::MutUntyped))>,
@@ -2811,8 +2833,6 @@ pub enum RequirementConfigSetError {
 pub(crate) struct RequiredByMeta {
     /// The configuration of the requirement.
     config: RequirementConfig,
-    /// Determines what to do when we try to remove this component, given its requirements.
-    removal_behavior: RemovalBehavior,
     /// The configuration can only be set once, just like a requirement can only be done once.
     configured: bool,
 }

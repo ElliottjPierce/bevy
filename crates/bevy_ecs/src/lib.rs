@@ -2380,11 +2380,18 @@ mod tests {
                 coherency: RequirementCoherencyMode::Remove
             }
         );
+
+        let mut entity = world.spawn(A);
+        assert!(entity.contains::<A>());
+        assert!(entity.contains::<B>());
+        entity.remove::<B>();
+        assert!(!entity.contains::<A>());
+        assert!(!entity.contains::<B>());
     }
 
     #[test]
     #[should_panic(
-        expected = "The `Component` derive macro for `A` sets `RequiredByMeta` for requiring `B`, but the component does not actually require `B`. Either add the requirement, or don't set `RequiredByMeta` for it."
+        expected = "The `Component` derive macro for `A` sets `RequirementConfig` for requiring `B`, but the component does not actually require `B`. Either add the requirement, or don't set `RequirementConfig` for it."
     )]
     fn registration_meta_fail() {
         #[derive(Component, Default)]

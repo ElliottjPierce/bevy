@@ -2001,7 +2001,7 @@ impl<'w> EntityWorldMut<'w> {
         }
 
         let old_archetype = &world.archetypes[location.archetype_id];
-        for component_id in bundle_info.iter_explicit_components() {
+        for component_id in bundle_info.iter_removed_components() {
             if old_archetype.contains(component_id) {
                 world.removed_components.send(component_id, entity);
 
@@ -2748,7 +2748,7 @@ unsafe fn trigger_on_replace_and_on_remove_hooks_and_observers(
 ) {
     let bundle_components_in_archetype = || {
         bundle_info
-            .iter_explicit_components()
+            .iter_removed_components()
             .filter(|component_id| archetype.contains(*component_id))
     };
     if archetype.has_replace_observer() {

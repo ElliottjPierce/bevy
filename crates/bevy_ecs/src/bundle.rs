@@ -446,6 +446,12 @@ pub enum InsertMode {
     Keep,
 }
 
+#[derive(Default)]
+pub(crate) struct RemovalAction {
+    /// components removed by extension
+    additionally_removed: Vec<ComponentId>,
+}
+
 /// Stores metadata associated with a specific type of [`Bundle`] for a given [`World`].
 ///
 /// [`World`]: crate::world::World
@@ -462,6 +468,7 @@ pub struct BundleInfo {
     component_ids: Vec<ComponentId>,
     required_components: Vec<RequiredComponentConstructor>,
     explicit_components_len: usize,
+    removal: RemovalAction,
 }
 
 impl BundleInfo {
@@ -530,6 +537,21 @@ impl BundleInfo {
             })
             .collect();
 
+        // determine removal
+        let mut removal = RemovalAction::default();
+        for explicit in &component_ids[0..explicit_components_len] {
+            // SAFETY: Ensured by caller.
+            let removal_behavior = unsafe {
+                components
+                    .get_removal_behavior(*explicit)
+                    .debug_checked_unwrap()
+            };
+            removal
+                .additionally_removed
+                .extend_from_slice(&removal_behavior.causes_removal);
+        }
+        removal.additionally_removed.dedup();
+
         // SAFETY: The caller ensures that component_ids:
         // - is valid for the associated world
         // - has had its storage initialized
@@ -539,6 +561,7 @@ impl BundleInfo {
             component_ids,
             required_components,
             explicit_components_len,
+            removal,
         }
     }
 
@@ -571,6 +594,14 @@ impl BundleInfo {
         &self.component_ids
     }
 
+    /// Returns an iterator over the [ID](ComponentId) of each component that should be removed when this bundle is removed from an entity.
+    pub fn iter_removed_components(&self) -> impl Iterator<Item = ComponentId> + Clone + '_ {
+        self.explicit_components()
+            .iter()
+            .chain(self.removal.additionally_removed.iter())
+            .copied()
+    }
+
     /// Returns an iterator over the [ID](ComponentId) of each component explicitly defined in this bundle (ex: this excludes Required Components).
     /// To iterate all components contributed by this bundle (including Required Components), see [`BundleInfo::iter_contributed_components`]
     #[inline]
@@ -588,7 +619,7 @@ impl BundleInfo {
 
     /// Returns an iterator over the [ID](ComponentId) of each Required Component needed by this bundle. This _does not include_ Required Components that are
     /// explicitly provided by the bundle.
-    pub fn iter_required_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+    pub fn iter_required_components(&self) -> impl Iterator<Item = ComponentId> + Clone + '_ {
         self.required_components().iter().copied()
     }
 
@@ -853,6 +884,7 @@ impl BundleInfo {
 
     /// Removes a bundle from the given archetype and returns the resulting archetype
     /// (or `None` if the removal was invalid).
+    /// This includes removing additional components in order to keep required components valid.
     /// This could be the same [`ArchetypeId`], in the event that removing the given bundle
     /// does not result in an [`Archetype`] change.
     ///
@@ -896,7 +928,7 @@ impl BundleInfo {
                 let current_archetype = &mut archetypes[archetype_id];
                 let mut removed_table_components = Vec::new();
                 let mut removed_sparse_set_components = Vec::new();
-                for component_id in self.iter_explicit_components() {
+                for component_id in self.iter_removed_components() {
                     if current_archetype.contains(component_id) {
                         // SAFETY: bundle components were already initialized by bundles.get_info
                         let component_info = unsafe { components.get_info_unchecked(component_id) };

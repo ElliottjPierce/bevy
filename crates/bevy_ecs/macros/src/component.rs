@@ -255,7 +255,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     }
                 }
             });
-            let panic_string_missing = format!("The `Component` derive macro for `{0}` sets `RequirementConfig` for requiring `{1}`, but the component does not actually require `{1}`. Either add the requirement, or don't set `RequiredByMeta` for it.", &ast.ident, &path.segments.last().unwrap().ident);
+            let panic_string_missing = format!("The `Component` derive macro for `{0}` sets `RequirementConfig` for requiring `{1}`, but the component does not actually require `{1}`. Either add the requirement, or don't set `RequirementConfig` for it.", &ast.ident, &path.segments.last().unwrap().ident);
             let panic_string_duplicate = format!("The `Component` derive macro for `{0}` sets `RequirementConfig` for requiring `{1}`, but it was already configured. Either don't configure it in the macro, or don't configure it manually.", &ast.ident, &path.segments.last().unwrap().ident);
             quote! {
                 #[allow(clippy::needless_update, reason = "We need this since the macro can not tell if it's needed or not.")]
