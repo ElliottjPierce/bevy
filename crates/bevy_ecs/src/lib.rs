@@ -133,8 +133,8 @@ mod tests {
         bundle::Bundle,
         change_detection::Ref,
         component::{
-            Component, ComponentId, RequiredByMeta, RequiredComponents, RequiredComponentsError,
-            RequirementCoherencyMode,
+            Component, ComponentId, RequiredComponents, RequiredComponentsError,
+            RequirementCoherencyMode, RequirementConfig,
         },
         entity::{Entity, EntityMapper},
         entity_disabling::DefaultQueryFilters,
@@ -2373,10 +2373,10 @@ mod tests {
         let info = components
             .get_info(components.valid_component_id::<B>().unwrap())
             .unwrap();
-        let required_by = info.required_by().get(a_id).unwrap();
+        let required_by = info.required_by().get_config(a_id).unwrap();
         assert_eq!(
             required_by,
-            &RequiredByMeta {
+            &RequirementConfig {
                 coherency: RequirementCoherencyMode::Remove
             }
         );

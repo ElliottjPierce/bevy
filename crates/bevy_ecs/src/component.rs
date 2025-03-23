@@ -1774,7 +1774,7 @@ impl<'w> ComponentsRegistrator<'w> {
     // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
     //       We can't directly move this there either, because this uses `Components::register_requirement_meta_manual_unchecked`,
     //       which is private, and could be equally risky to expose to users.
-    /// Registers that where `T` requires `R`, it does so with this [`RequiredByMeta`].
+    /// Registers that where `T` requires `R`, it does so with this [`RequirementConfig`].
     /// Returns `false` if the requirement has not been registered yet.
     ///
     /// This does not register the requirement!
@@ -1783,13 +1783,13 @@ impl<'w> ComponentsRegistrator<'w> {
     #[doc(hidden)]
     pub fn register_requirement_meta_manual<T: Component, R: Component>(
         &mut self,
-        meta: RequiredByMeta,
+        config: RequirementConfig,
     ) -> bool {
         let component = self.register_component::<T>();
         let required = self.register_component::<R>();
 
         // SAFETY: We just created the components.
-        unsafe { self.register_requirement_meta_manual_unchecked(component, required, meta) }
+        unsafe { self.register_requirement_meta_manual_unchecked(component, required, config) }
     }
 
     // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
@@ -2286,7 +2286,7 @@ impl Components {
             .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
     }
 
-    /// Sets the [`RequirementCoherencyMode`] of `component`'s requirement of `required`.
+    /// Sets the [`RequirementConfig`] of `component`'s requirement of `required`.
     /// Returns `false` if the requirement has not been registered yet.
     ///
     /// # Safety
@@ -2297,11 +2297,11 @@ impl Components {
         &mut self,
         component: ComponentId,
         required: ComponentId,
-        data: RequiredByMeta,
+        config: RequirementConfig,
     ) -> bool {
         // SAFETY: Ensured by caller.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
-        required_by.set_if_required(component, data)
+        required_by.set_if_required(component, config)
     }
 
     /// Returns true if the [`ComponentId`] is fully registered and valid.
@@ -2718,12 +2718,19 @@ pub enum RequirementCoherencyMode {
     // KeepAndLink,
 }
 
-/// This is the other half of a [`RequiredComponent`].
+/// This provides all the configuration of a requirement.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct RequiredByMeta {
+pub struct RequirementConfig {
     /// The fundamental more for the requirement.
     /// See [`RequirementCoherencyMode`] for details.
     pub coherency: RequirementCoherencyMode,
+}
+
+/// This is the other half of a [`RequiredComponent`].
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct RequiredByMeta {
+    /// The configuration of the requirement.
+    config: RequirementConfig,
 }
 
 /// This is the other half of [`RequiredComponents`].
@@ -2733,9 +2740,7 @@ pub struct RequiredBy(pub(crate) HashMap<ComponentId, RequiredByMeta>);
 impl RequiredBy {
     /// Includes the `id`, adding it if it did not exist.
     pub(crate) fn include(&mut self, id: ComponentId) -> &mut RequiredByMeta {
-        self.0.entry(id).or_insert(RequiredByMeta {
-            coherency: RequirementCoherencyMode::default(),
-        })
+        self.0.entry(id).or_default()
     }
 
     /// Iterates the id that require this component.
@@ -2743,21 +2748,21 @@ impl RequiredBy {
         self.0.keys().copied()
     }
 
-    /// Iterates all the components that requrie this one.
-    pub fn iter(&self) -> impl Iterator<Item = (&RequiredByMeta, ComponentId)> {
-        self.0.iter().map(|(key, required_by)| (required_by, *key))
-    }
-
     /// Gets the [`RequiredByMeta`] this component if `id` requires this component.
-    pub fn get(&self, id: ComponentId) -> Option<&RequiredByMeta> {
+    pub(crate) fn get(&self, id: ComponentId) -> Option<&RequiredByMeta> {
         self.0.get(&id)
     }
 
-    /// Sets the metadata of this requirement if it is represented.
+    /// Gets the [`RequirementConfig`] this component if `id` requires this component.
+    pub fn get_config(&self, id: ComponentId) -> Option<&RequirementConfig> {
+        self.get(id).map(|meta| &meta.config)
+    }
+
+    /// Sets the [`RequirementConfig`] of this requirement if it is represented.
     /// Returns true if and only if the requirement was represented.
-    pub(crate) fn set_if_required(&mut self, id: ComponentId, meta: RequiredByMeta) -> bool {
+    pub(crate) fn set_if_required(&mut self, id: ComponentId, config: RequirementConfig) -> bool {
         if let Some(current) = self.0.get_mut(&id) {
-            *current = meta;
+            current.config = config;
             true
         } else {
             false

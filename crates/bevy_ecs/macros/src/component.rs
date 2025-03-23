@@ -259,7 +259,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             quote! {
                 #[allow(clippy::needless_update, reason = "We need this since the macro can not tell if it's needed or not.")]
                 let success = components.register_requirement_meta_manual::<Self, #path>(
-                    #bevy_ecs_path::component::RequiredByMeta {
+                    #bevy_ecs_path::component::RequirementConfig {
                         #(#constructor)*
                         ..Default::default()
                     }
