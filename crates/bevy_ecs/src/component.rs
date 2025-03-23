@@ -2299,7 +2299,65 @@ impl Components {
     ) -> Result<(), RequirementConfigSetError> {
         // SAFETY: Ensured by caller.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
-        required_by.set_if_required(component, config)
+        let meta = required_by.set_if_required(component, config)?;
+        let coherency = meta.config.coherency;
+
+        // SAFETY: Ensured by caller.
+        unsafe {
+            self.buble_up_coherency_enforcement(component, required, coherency);
+        }
+
+        Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// The given component IDs `component` and `required` must be valid.
+    /// The `component` must require `required` already (directly or indirectly).
+    unsafe fn buble_up_coherency_enforcement(
+        &mut self,
+        component: ComponentId,
+        required: ComponentId,
+        coherency: RequirementCoherencyMode,
+    ) {
+        // figure out what we need to buble up.
+        // SAFETY: Ensured by caller.
+        let component_required_by =
+            unsafe { self.get_required_by_mut(component).debug_checked_unwrap() };
+        let to_buble_up = component_required_by
+            .0
+            .iter()
+            .filter_map(|(id, meta)| match coherency {
+                RequirementCoherencyMode::None => None,
+                RequirementCoherencyMode::Remove => {
+                    matches!(meta.config.coherency, RequirementCoherencyMode::Remove).then_some(*id)
+                }
+            })
+            .collect::<SmallVec<[_; 8]>>();
+
+        // uphold the coherency
+        // SAFETY: Ensured by caller.
+        let meta = unsafe {
+            self.get_required_by_mut(required)
+                .debug_checked_unwrap()
+                .0
+                .get_mut(&component)
+                .debug_checked_unwrap()
+        };
+        match coherency {
+            RequirementCoherencyMode::None => {}
+            RequirementCoherencyMode::Remove => {
+                meta.removal_behavior.causes_removal.push(component);
+            }
+        }
+
+        // do the buble up
+        for to_buble_up in to_buble_up {
+            // SAFETY: Ensured by caller and that for a component to be required it must be registered.
+            unsafe {
+                self.buble_up_coherency_enforcement(to_buble_up, required, coherency);
+            }
+        }
     }
 
     /// Returns true if the [`ComponentId`] is fully registered and valid.
@@ -2789,14 +2847,14 @@ impl RequiredBy {
         &mut self,
         id: ComponentId,
         config: RequirementConfig,
-    ) -> Result<(), RequirementConfigSetError> {
+    ) -> Result<&mut RequiredByMeta, RequirementConfigSetError> {
         if let Some(current) = self.0.get_mut(&id) {
             if current.configured {
                 Err(RequirementConfigSetError::Duplicate)
             } else {
                 current.config = config;
                 current.configured = true;
-                Ok(())
+                Ok(current)
             }
         } else {
             Err(RequirementConfigSetError::NotRequired)
