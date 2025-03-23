@@ -551,6 +551,9 @@ impl BundleInfo {
                 .extend_from_slice(&removal_behavior.causes_removal);
         }
         removal.additionally_removed.dedup();
+        removal
+            .additionally_removed
+            .retain(|id| component_ids[0..explicit_components_len].contains(id));
 
         // SAFETY: The caller ensures that component_ids:
         // - is valid for the associated world
