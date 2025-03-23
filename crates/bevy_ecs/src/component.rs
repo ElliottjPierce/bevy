@@ -1775,21 +1775,20 @@ impl<'w> ComponentsRegistrator<'w> {
     //       We can't directly move this there either, because this uses `Components::register_requirement_meta_manual_unchecked`,
     //       which is private, and could be equally risky to expose to users.
     /// Registers that where `T` requires `R`, it does so with this [`RequirementConfig`].
-    /// Returns `false` if the requirement has not been registered yet.
     ///
     /// This does not register the requirement!
     /// See [`register_required_components_manual`](Self::register_required_components_manual) for that.
     /// This will only do something if `T` already requires `R` in some way.
     #[doc(hidden)]
-    pub fn register_requirement_meta_manual<T: Component, R: Component>(
+    pub fn configure_requirement_manual<T: Component, R: Component>(
         &mut self,
         config: RequirementConfig,
-    ) -> bool {
+    ) -> Result<(), RequirementConfigSetError> {
         let component = self.register_component::<T>();
         let required = self.register_component::<R>();
 
         // SAFETY: We just created the components.
-        unsafe { self.register_requirement_meta_manual_unchecked(component, required, config) }
+        unsafe { self.configure_requirement_manual_unchecked(component, required, config) }
     }
 
     // NOTE: This should maybe be private, but it is currently public so that `bevy_ecs_macros` can use it.
@@ -2287,18 +2286,17 @@ impl Components {
     }
 
     /// Sets the [`RequirementConfig`] of `component`'s requirement of `required`.
-    /// Returns `false` if the requirement has not been registered yet.
     ///
     /// # Safety
     ///
     /// The given component IDs `component` and `required` must be valid.
     #[inline]
-    pub(crate) unsafe fn register_requirement_meta_manual_unchecked(
+    pub(crate) unsafe fn configure_requirement_manual_unchecked(
         &mut self,
         component: ComponentId,
         required: ComponentId,
         config: RequirementConfig,
-    ) -> bool {
+    ) -> Result<(), RequirementConfigSetError> {
         // SAFETY: Ensured by caller.
         let required_by = unsafe { self.get_required_by_mut(required).debug_checked_unwrap() };
         required_by.set_if_required(component, config)
@@ -2699,6 +2697,19 @@ impl<T: Component> FromWorld for InitComponentId<T> {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct RemovalBehavior {
+    /// Removing this component will also remove these components if they exist.
+    causes_removal: Vec<ComponentId>,
+    // Coming soon?
+    // /// Removing this component will also re-insert these components if they exist.
+    // reinsert_if_removes: Vec<(ComponentId, fn(crate::change_detection::MutUntyped))>,
+    // /// Removing this component will panic if these components exist.
+    // panic_if_removed_without: Vec<ComponentId>,
+    // /// Removing this component will quietly fail if these components exist.
+    // deny_removal_without: Vec<ComponentId>,
+}
+
 /// This defines how a [`RequiredComponent`] behaves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub enum RequirementCoherencyMode {
@@ -2726,11 +2737,26 @@ pub struct RequirementConfig {
     pub coherency: RequirementCoherencyMode,
 }
 
+/// An error returned when the setting the [`RequirementConfig`] of a requirement didn't work.
+#[derive(Error, Debug)]
+pub enum RequirementConfigSetError {
+    /// The [`RequirementConfig`] was already set.
+    #[error("Setting `RequirementConfig` more than once per requirement is not allowed.")]
+    Duplicate,
+    /// The requirement did not exist.
+    #[error("Can not set `RequirementConfig` for a requirement that does not exist.")]
+    NotRequired,
+}
+
 /// This is the other half of a [`RequiredComponent`].
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct RequiredByMeta {
     /// The configuration of the requirement.
     config: RequirementConfig,
+    /// Determines what to do when we try to remove this component, given its requirements.
+    removal_behavior: RemovalBehavior,
+    /// The configuration can only be set once, just like a requirement can only be done once.
+    configured: bool,
 }
 
 /// This is the other half of [`RequiredComponents`].
@@ -2759,13 +2785,21 @@ impl RequiredBy {
     }
 
     /// Sets the [`RequirementConfig`] of this requirement if it is represented.
-    /// Returns true if and only if the requirement was represented.
-    pub(crate) fn set_if_required(&mut self, id: ComponentId, config: RequirementConfig) -> bool {
+    pub(crate) fn set_if_required(
+        &mut self,
+        id: ComponentId,
+        config: RequirementConfig,
+    ) -> Result<(), RequirementConfigSetError> {
         if let Some(current) = self.0.get_mut(&id) {
-            current.config = config;
-            true
+            if current.configured {
+                Err(RequirementConfigSetError::Duplicate)
+            } else {
+                current.config = config;
+                current.configured = true;
+                Ok(())
+            }
         } else {
-            false
+            Err(RequirementConfigSetError::NotRequired)
         }
     }
 }
