@@ -2357,7 +2357,7 @@ mod tests {
     }
 
     #[test]
-    fn registration_meta() {
+    fn requirement_coherency() {
         #[derive(Component, Default)]
         #[require(B)]
         #[requirement_cfg(B(coherency=Remove))]
@@ -2390,10 +2390,59 @@ mod tests {
     }
 
     #[test]
+    fn requirement_coherency_tall() {
+        #[derive(Component, Default)]
+        #[require(B)]
+        #[requirement_cfg(B(coherency=Remove), C(coherency=Remove))]
+        struct A;
+
+        #[derive(Component, Default)]
+        #[require(C)]
+        #[requirement_cfg(C(coherency=None))]
+        struct B;
+
+        #[derive(Component, Default)]
+        #[require(D)]
+        #[requirement_cfg(D(coherency=Remove))]
+        struct C;
+
+        #[derive(Component, Default)]
+        struct D;
+
+        let mut world = World::new();
+        world.register_component::<C>();
+        world.register_component::<D>();
+        world.register_component::<B>();
+        world.register_component::<A>();
+
+        let mut entity = world.spawn(A);
+        assert!(entity.contains::<A>());
+        assert!(entity.contains::<B>());
+        assert!(entity.contains::<C>());
+        assert!(entity.contains::<D>());
+        entity.remove::<D>();
+        assert!(!entity.contains::<A>());
+        assert!(!entity.contains::<B>());
+        assert!(!entity.contains::<C>());
+        assert!(!entity.contains::<D>());
+
+        let mut entity = world.spawn(A);
+        assert!(entity.contains::<A>());
+        assert!(entity.contains::<B>());
+        assert!(entity.contains::<C>());
+        assert!(entity.contains::<D>());
+        entity.remove::<(D, C, A)>();
+        assert!(!entity.contains::<A>());
+        assert!(!entity.contains::<B>());
+        assert!(!entity.contains::<C>());
+        assert!(!entity.contains::<D>());
+    }
+
+    #[test]
     #[should_panic(
         expected = "The `Component` derive macro for `A` sets `RequirementConfig` for requiring `B`, but the component does not actually require `B`. Either add the requirement, or don't set `RequirementConfig` for it."
     )]
-    fn registration_meta_fail() {
+    fn requirement_coherency_fail_missing() {
         #[derive(Component, Default)]
         // #[require(B)] // This being missing should cause a panic.
         #[require(C)]
