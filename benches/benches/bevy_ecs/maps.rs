@@ -64,10 +64,13 @@ fn mapping_types_lookups_hits<T: BenchingType>(c: &mut Criterion) {
 
         for (map, valid, name) in &tests {
             let mut sparse_set_group = c.benchmark_group(format!(
-                "map_hits_of_{}_{}_{}s",
+                "map_hits_of_{}_{}_`{}`s",
                 size,
                 name,
                 core::any::type_name::<T>()
+                    .split("::")
+                    .last()
+                    .unwrap_or_else(|| core::any::type_name::<T>())
             ));
             sparse_set_group.warm_up_time(core::time::Duration::from_millis(500));
             sparse_set_group.measurement_time(core::time::Duration::from_secs(4));
