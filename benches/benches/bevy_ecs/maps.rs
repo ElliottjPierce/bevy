@@ -3,9 +3,15 @@ use bevy_platform_support::{collections::HashMap, hash::Hashed};
 use bevy_utils::PreHashMap;
 use core::hint::black_box;
 use criterion::*;
-use std::hash::Hash;
+use std::{hash::Hash, num::NonZero};
 
-criterion_group!(benches, mapping_types_lookups_hits::<Small>);
+criterion_group!(
+    benches,
+    mapping_types_lookups_hits::<Small>,
+    mapping_types_lookups_hits::<Big>,
+    mapping_types_lookups_hits::<BigValue>,
+    mapping_types_lookups_hits::<SmallNiche>
+);
 
 fn build_dense_hash_map<T: BenchingType>(num: usize) -> (HashMap<T, T::Stored>, Vec<T>) {
     let mut map = HashMap::default();
@@ -58,7 +64,7 @@ fn mapping_types_lookups_hits<T: BenchingType>(c: &mut Criterion) {
 
         for (map, valid, name) in &tests {
             let mut sparse_set_group = c.benchmark_group(format!(
-                "map_hits_of_{}_{}_{}",
+                "map_hits_of_{}_{}_{}s",
                 size,
                 name,
                 core::any::type_name::<T>()
@@ -149,6 +155,102 @@ impl BenchingType for Small {
 
     fn from_index(index: usize) -> (Self, Self::Stored) {
         (Self(index as u32), index as u32)
+    }
+
+    fn roll(val: Self::Stored, into: &mut Self::Stored) {
+        *into += val;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct BigValue(u32);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+struct BigValueStored {
+    x: u128,
+    x1: u128,
+    x2: u128,
+    x3: u128,
+    x4: u128,
+    x5: u128,
+    x6: u128,
+    x7: u128,
+}
+
+impl SparseSetIndex for BigValue {
+    fn sparse_set_index(&self) -> usize {
+        self.0 as usize
+    }
+
+    fn get_sparse_set_index(value: usize) -> Self {
+        Self(value as u32)
+    }
+}
+
+impl BenchingType for BigValue {
+    type Stored = BigValueStored;
+
+    fn from_index(index: usize) -> (Self, Self::Stored) {
+        (
+            Self(index as u32),
+            BigValueStored {
+                x: index as u128,
+                ..Default::default()
+            },
+        )
+    }
+
+    fn roll(val: Self::Stored, into: &mut Self::Stored) {
+        into.x += val.x;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct Big(u64);
+
+impl SparseSetIndex for Big {
+    fn sparse_set_index(&self) -> usize {
+        self.0 as usize
+    }
+
+    fn get_sparse_set_index(value: usize) -> Self {
+        Self(value as u64)
+    }
+}
+
+impl BenchingType for Big {
+    type Stored = u64;
+
+    fn from_index(index: usize) -> (Self, Self::Stored) {
+        (Self(index as u64), index as u64)
+    }
+
+    fn roll(val: Self::Stored, into: &mut Self::Stored) {
+        *into += val;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct SmallNiche(NonZero<u32>);
+
+impl SparseSetIndex for SmallNiche {
+    fn sparse_set_index(&self) -> usize {
+        self.0.get() as usize
+    }
+
+    fn get_sparse_set_index(value: usize) -> Self {
+        Self(NonZero::new(value as u32).unwrap_or(NonZero::<u32>::MIN))
+    }
+}
+
+impl BenchingType for SmallNiche {
+    type Stored = u32;
+
+    fn from_index(index: usize) -> (Self, Self::Stored) {
+        (
+            Self(NonZero::<u32>::new((index + 1) as u32).unwrap_or(NonZero::<u32>::MIN)),
+            index as u32,
+        )
     }
 
     fn roll(val: Self::Stored, into: &mut Self::Stored) {
