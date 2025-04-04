@@ -12,6 +12,7 @@ mod entity_cloning;
 mod events;
 mod fragmentation;
 mod iteration;
+mod maps;
 mod observers;
 mod param;
 mod scheduling;
@@ -29,4 +30,5 @@ criterion_main!(
     scheduling::benches,
     world::benches,
     param::benches,
+    maps::benches,
 );
