@@ -8,6 +8,7 @@ use criterion::criterion_main;
 mod change_detection;
 mod components;
 mod empty_archetypes;
+mod entities;
 mod entity_cloning;
 mod events;
 mod fragmentation;
@@ -29,4 +30,5 @@ criterion_main!(
     scheduling::benches,
     world::benches,
     param::benches,
+    entities::benches,
 );
